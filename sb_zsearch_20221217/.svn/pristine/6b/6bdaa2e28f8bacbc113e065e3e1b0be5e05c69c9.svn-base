@@ -1,0 +1,143 @@
+package com.vo;
+
+import java.sql.Array;
+import java.util.List;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
+
+import org.apache.commons.lang3.concurrent.AtomicInitializer;
+import org.hibernate.stat.internal.SessionStatisticsImpl;
+import org.springframework.beans.factory.InitializingBean;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.stereotype.Component;
+
+import com.google.common.collect.Lists;
+import com.vo.entity.CiEntity;
+import com.vo.repository.CiRepository;
+import com.votool.ze.ZE;
+import com.votool.ze.ZES;
+
+import cn.hutool.bloomfilter.BloomFilter;
+import cn.hutool.bloomfilter.bitMap.BitMap;
+import cn.hutool.bloomfilter.filter.DefaultFilter;
+
+/**
+ *
+ *
+ * @author zhangzhen
+ * @date 2022年12月20日
+ *
+ */
+@Component
+public class Load implements InitializingBean {
+
+	public static final int PAGE_SIZE = 10000;
+
+	private final BloomFilter filter = new DefaultFilter(5000000, BitMap.MACHINE64);
+	private final  ZE queryZE = ZES.newZE(4);
+	private final  ZE fZE = ZES.newZE(100 * Runtime.getRuntime().availableProcessors());
+
+	private static final AtomicBoolean DONE = new AtomicBoolean(false);
+
+	@Autowired
+	private CiRepository ciRepository;
+
+	public boolean contains(final String string) {
+		return this.filter.contains(string);
+	}
+
+	public boolean isDone() {
+		return Load.DONE.get();
+	}
+
+
+	@Override
+	public void afterPropertiesSet() throws Exception {
+		System.out.println(java.time.LocalDateTime.now() + "\t" + Thread.currentThread().getName() + "\t"
+				+ "Load.afterPropertiesSet()");
+
+		this.fZE.executeInQueue(() -> {
+
+			final Long count = this.ciRepository.countByMaxIdAndMinId();
+			final AtomicInteger n = new AtomicInteger(0);
+			System.out.println("ci.count = " + count);
+
+			final int pageN1 = (int) ((count + PAGE_SIZE) / PAGE_SIZE);
+			System.out.println("pageN1 = " + pageN1);
+
+//			for (int i = 1; i <= pageN1; i++) {
+//				final int pageNo = i;
+//				this.queryZE.executeInQueue(() -> {
+//					final List<CiEntity> list = this.ciRepository.findCiPage(pageNo, PAGE_SIZE);
+//					System.out.println(java.time.LocalDateTime.now() + "\t" + Thread.currentThread().getName() + "\t"
+//							+ "list.size = " + list.size() + "\t" + "pageNo = " + pageNo);
+//					this.fZE.executeInQueue(() -> {
+//						list.parallelStream().forEach(ce -> {
+//							final Array array = ce.getCi();
+//							final List<String> cilist = c(array);
+//							for (final String ci : cilist) {
+//								this.filter.add(ci);
+//							}
+//						});
+//
+//						final int n2 = n.incrementAndGet();
+//						if (n2 >= count) {
+//							DONE.set(true);
+//						}
+//
+//					});
+//
+//				});
+//			}
+
+
+//			int pageNo = 1;
+//			Long id = 0L;
+//			while (true) {
+//
+//				final List<CiEntity> list = this.ciRepository.findByIdLimit(id, PAGE_SIZE);
+//
+//				this.fZE.executeInQueue(() -> {
+//					list.stream().forEach(ce -> {
+//						final Array array = ce.getCi();
+//						final List<String> cilist = c(array);
+//						for (final String ci : cilist) {
+//							this.filter.add(ci);
+//						}
+//					});
+//
+//					if (n.incrementAndGet() >= count) {
+//						DONE.set(true);
+//					}
+//
+//				});
+//
+//				System.out.println("list.size = " + list.size() + "\t" + "pageNo = " + pageNo);
+//				if (list.size() < PAGE_SIZE) {
+//					System.out.println("查询结束,pageNo = " + pageNo);
+//					DONE.set(true);
+//					break;
+//				}
+//
+//				id = list.get(list.size() - 1).getId();
+//				System.out.println("id = " + id);
+//				pageNo++;
+//			}
+
+		});
+	}
+
+	public static List<String> c(final Array array) {
+		final String string = String.valueOf(array);
+		final String s2 = string.replace("{", "").replace("}", "");
+		final String[] a = s2.split(",");
+		final List<String> l = Lists.newArrayList();
+		for (final String ci : a) {
+			final boolean add = l.add(ci.trim());
+		}
+
+		return l;
+	}
+
+}
